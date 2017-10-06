@@ -1,6 +1,9 @@
 import vk
 import urllib
 import os
+from multiprocessing import Pool
+from progress.bar import Bar
+from functools import partial
 
 app_id = '6124903'
 
@@ -18,12 +21,12 @@ def cycles_number(owner_id):
     return number_of_cycles
 
 
-def collect_URL(owner_id, cycle):
+def collect_URL(owner_id, cycle, offset):
     url_list = []
     for i in range(0, int(cycle + 1)):
-        # count = 1000, offset = 1000 * i
+        # count = 1000, offset = offset + 1000 * i
         photos = vk_api.photos.get(owner_id=owner_id, album_id="saved", rev=0,
-                                   photo_sizes=1, count=1000, offset=1000*i)
+                                   photo_sizes=1, count=1000, offset=offset+1000*i)
         for photo in photos:
             url = photo['sizes'][-1]['src']
             url_list.append(url)
@@ -31,36 +34,37 @@ def collect_URL(owner_id, cycle):
     return url_list
 
 
-def download_images(url_list, folder):
-    print "Downloading %i images to %s folder." % (len(url_list), folder)
-    directory = folder+'/'
-    img_downloaded = 0
-    for url in url_list:
-        break_url = url.split('/')
-        id_photo = break_url[-1]
-        urllib.urlretrieve(url, os.path.join(os.getcwd(),
-                                             directory + id_photo))
-        img_downloaded += 1
-        show_progress(url_list, img_downloaded)
+def download_images(url, folder):
+    break_url = url.split('/')
+    id_photo = break_url[-1]
+    urllib.urlretrieve(url, os.path.join(os.getcwd(),
+                                         folder + id_photo))
 
 
 def choose_folder():
     folder_name = raw_input("Choose a name for the folder > ")
     if not (os.path.isdir(folder_name)):
         os.makedirs(folder_name)
-
-    owner_id = raw_input('Owner ID: ')
-    download_images(collect_URL(owner_id, cycles_number(owner_id)), folder_name)
-
-
-def show_progress(url_list, img_downloaded):
-    percentage = round(img_downloaded * 100 / len(url_list), 2)
-    print ("\rDownloaded %i out of %i (%d%%)." % (img_downloaded, len(url_list),
-                                                  percentage))
+        number_of_files = 0
+    else:
+        number_of_files = len([name for name in os.listdir(folder_name) if os.path.isfile(name)])
+        print "The folder already exists. There are %i images." % (number_of_files)
+    return folder_name, number_of_files
 
 
 if __name__ == '__main__':
     login = raw_input('Insert your vk login > ')
     password = raw_input('Insert your vk password > ')
     vk_api = vk.API(auth(app_id, login, password))
-    choose_folder()
+
+    folder_name, offset = choose_folder()
+    owner_id = raw_input('Owner ID > ')
+    cycles = cycles_number(owner_id)
+    url_list = collect_URL(owner_id, cycles, offset)
+
+    print "Downloading %i images to %s folder." % (len(url_list), folder_name)
+    pool = Pool()
+    bar = Bar('Processing', max=len(url_list))
+    for i in pool.imap(partial(download_images, folder = "Christina's Saved Images/"), url_list):
+        bar.next()
+    bar.finish()
